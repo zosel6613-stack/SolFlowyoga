@@ -135,6 +135,7 @@ body{background:var(--dusk);color:var(--fg);font-family:var(--body);-webkit-user
 #classBar{position:fixed;left:50%;transform:translateX(-50%);top:calc(124px + env(safe-area-inset-top,0px));z-index:6;padding:7px 8px 7px 14px;display:flex;gap:10px;align-items:center;font-size:13px;white-space:nowrap;max-width:calc(100% - 24px)}
 #classText{overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 #classStop{font:inherit;font-size:12px;color:var(--fg);background:rgba(255,240,220,.12);border:0;border-radius:999px;padding:4px 10px;cursor:pointer}
+#vcWhy{position:fixed;right:max(12px,env(safe-area-inset-right,0px));top:calc(186px + env(safe-area-inset-top,0px));margin:0;padding:6px 10px;font-size:12px;color:var(--muted);z-index:5;max-width:240px}
 #netWhy{position:fixed;right:max(12px,env(safe-area-inset-right,0px));top:calc(150px + env(safe-area-inset-top,0px));margin:0;padding:6px 10px;font-size:12px;color:var(--muted);z-index:5;max-width:240px}
 #chatBtn{position:relative}
 #badge{position:absolute;top:2px;right:2px;min-width:18px;height:18px;border-radius:9px;background:var(--ember);color:#2a1408;font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 4px}
@@ -180,6 +181,7 @@ body{background:var(--dusk);color:var(--fg);font-family:var(--body);-webkit-user
   </div>
   <div id="list" class="glass" hidden></div>
   <p id="netWhy" class="glass" hidden></p>
+  <p id="vcWhy" class="glass" hidden></p>
   <div id="goMenu" class="glass" hidden><button type="button" data-go="plaza" id="go-plaza">요가 광장</button><button type="button" data-go="tea" id="go-tea">차담 텐트</button><button type="button" data-go="med" id="go-med">명상 동굴</button><button type="button" data-go="beach" id="go-beach">바다</button><button type="button" data-go="paris" id="go-paris">파리</button><button type="button" data-go="bali" id="go-bali">발리 요가원</button><button type="button" data-go="spa" id="go-spa">겨울 사우나</button><button type="button" data-go="rome" id="go-rome">피렌체</button><button type="button" data-go="sg" id="go-sg">싱가포르</button><button type="button" data-go="priv" id="go-priv">개인 수련실<span id="privMenuCount"></span></button></div>
   <div id="joy" aria-label="이동 조이스틱"><div id="knob"></div></div>
   <div id="actions">
@@ -2568,26 +2570,33 @@ let hintT=null;function hideHint(){const h=document.getElementById('hint');if(!h
 const SUPA_URL='https://wwrjkdphmwzygfmuddgi.supabase.co',SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3cmprZHBobXd6eWdmbXVkZGdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODQ4MTksImV4cCI6MjEwODg2MDgxOX0.z7iEYS5H7EINplA79qfQpKY66qIbl6Rjy1vFsIlkfEs';
 function supaRoom(lib){
   if(!lib||!lib.createClient)return null;
-  let client;try{client=lib.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false},realtime:{params:{eventsPerSecond:20}}})}catch(e){return null}
+  let client;try{client=lib.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false},realtime:{params:{eventsPerSecond:10}}})}catch(e){return null}
   const me='p'+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
-  const ch=client.channel('alula-desert-v1',{config:{presence:{key:me},broadcast:{self:false}}});
+  let ch=null,lostAt=Date.now();
   const others=new Map(),here=new Set();let mine={},conn=false,snap=[],peerCbs=[],connCbs=[],raf=0;
   const build=()=>{raf=0;snap=Object.freeze([{peer:me,sameTab:true,isMe:true,by:null,kind:'viewer',guest:false,presence:mine},
       ...[...others].map(([k,v])=>({peer:k,sameTab:false,isMe:false,by:null,kind:'viewer',guest:false,presence:v.s}))]);peerCbs.forEach(f=>{try{f({peers:snap,joined:[],left:[],updated:[]})}catch(e){}})};
   const soon=()=>{if(!raf)raf=requestAnimationFrame(build)};
   const accept=(k,s,t)=>{if(k===me||!s||typeof s!=='object')return;const cur=others.get(k);if(cur&&cur.t>t)return;others.set(k,{s,t});soon()};
+  function join(){ch=client.channel('alula-desert-v1',{config:{presence:{key:me},broadcast:{self:false}}});
   ch.on('presence',{event:'sync'},()=>{const st=ch.presenceState();here.clear();Object.keys(st).forEach(k=>{here.add(k);const m=st[k]&&st[k][0];if(m&&m.s)accept(k,m.s,+m.t||0)});
     for(const k of [...others.keys()])if(!here.has(k))others.delete(k);soon()});
   ch.on('broadcast',{event:'st'},({payload})=>{if(payload&&here.has(payload.k))accept(payload.k,payload.s,+payload.t||0)});
   // a newcomer asks once and everyone answers with their current state
-  ch.on('broadcast',{event:'hi'},()=>{lastCast=0;cast()});
-  let sigCbs=[];ch.on('broadcast',{event:'rtc'},({payload})=>{if(payload&&payload.to===me&&here.has(payload.from))sigCbs.forEach(f=>{try{f(payload.from,payload.d)}catch(e){}})});
-  let lastCast=0,castT=0,lastTrack=0,trackT=0;
-  const cast=()=>{if(!conn)return;const now=Date.now();if(now-lastCast<160){if(!castT)castT=setTimeout(()=>{castT=0;cast()},170-(now-lastCast));return}
+  ch.on('broadcast',{event:'hi'},()=>{setTimeout(()=>{lastCast=0;cast()},200+Math.random()*1500)});
+  ch.on('broadcast',{event:'rtc'},({payload})=>{if(payload&&payload.to===me&&here.has(payload.from))sigCbs.forEach(f=>{try{f(payload.from,payload.d)}catch(e){}})});
+  const my=ch;ch.subscribe((st,err)=>{if(ch!==my)return;status=st==='SUBSCRIBED'?'연결됨':st==='TIMED_OUT'?'서버 응답이 없어요':st==='CHANNEL_ERROR'?'서버 연결 오류'+(err&&err.message?' · '+err.message:''):st==='CLOSED'?'연결이 끊겼어요':st;const was=conn;conn=st==='SUBSCRIBED';if(conn&&!was){lastTrack=Date.now();ch.track({s:mine,t:Date.now()}).catch(()=>{});ch.send({type:'broadcast',event:'hi',payload:{k:me}}).catch(()=>{})}
+    if(!conn&&was)lostAt=Date.now();if(was!==conn)connCbs.forEach(f=>{try{f(conn)}catch(e){}})})}
+  let sigCbs=[],lastCast=0,castT=0,lastTrack=0,trackT=0,status='연결 중';
+  const gap=()=>Math.max(450,180*here.size);
+  const cast=()=>{if(!conn)return;const now=Date.now(),g=gap();if(now-lastCast<g){if(!castT)castT=setTimeout(()=>{castT=0;cast()},g+10-(now-lastCast));return}
     lastCast=now;ch.send({type:'broadcast',event:'st',payload:{k:me,s:mine,t:now}}).catch(()=>{});
-    if(now-lastTrack>2500){lastTrack=now;ch.track({s:mine,t:now}).catch(()=>{})}else if(!trackT)trackT=setTimeout(()=>{trackT=0;lastTrack=Date.now();if(conn)ch.track({s:mine,t:Date.now()}).catch(()=>{})},2600)};
-  let status='연결 중';ch.subscribe((st,err)=>{status=st==='SUBSCRIBED'?'연결됨':st==='TIMED_OUT'?'서버 응답이 없어요':st==='CHANNEL_ERROR'?'서버 연결 오류'+(err&&err.message?' · '+err.message:''):st==='CLOSED'?'연결이 끊겼어요':st;const was=conn;conn=st==='SUBSCRIBED';if(conn&&!was){lastTrack=Date.now();ch.track({s:mine,t:Date.now()}).catch(()=>{});ch.send({type:'broadcast',event:'hi',payload:{k:me}}).catch(()=>{})}
-    if(was!==conn)connCbs.forEach(f=>{try{f(conn)}catch(e){}})});
+    if(now-lastTrack>15000){lastTrack=now;ch.track({s:mine,t:now}).catch(()=>{})}else if(!trackT)trackT=setTimeout(()=>{trackT=0;lastTrack=Date.now();if(conn)ch.track({s:mine,t:Date.now()}).catch(()=>{})},15500-(now-lastTrack))};
+  join();
+  // if the channel stays down (rate limit, phone asleep, network blip) rebuild it rather than waiting forever
+  const rejoin=()=>{if(conn)return;try{client.removeChannel(ch)}catch(e){}status='다시 연결하는 중…';lostAt=Date.now();join()};
+  setInterval(()=>{if(!conn&&Date.now()-lostAt>9000)rejoin()},3000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!conn&&Date.now()-lostAt>2000)rejoin()});
   addEventListener('pagehide',()=>{try{ch.untrack();client.removeChannel(ch)}catch(e){}});
   build();
   return {
@@ -2735,27 +2744,40 @@ function voiceTargets(){if(!VC.on||!me)return new Set();const myZ=zoneOfXZ(pos.x
 function waitIce(pc){return new Promise(res=>{if(pc.iceGatheringState==='complete')return res();const t=setTimeout(res,2500);pc.addEventListener('icegatheringstatechange',()=>{if(pc.iceGatheringState==='complete'){clearTimeout(t);res()}})})}
 function analyser(stream){try{if(!VC.ctx)VC.ctx=new (window.AudioContext||window.webkitAudioContext)();const src=VC.ctx.createMediaStreamSource(stream),an=VC.ctx.createAnalyser();an.fftSize=512;src.connect(an);return {an,buf:new Uint8Array(an.fftSize)}}catch(e){return null}}
 function level(A){if(!A)return 0;A.an.getByteTimeDomainData(A.buf);let s=0;for(let i=0;i<A.buf.length;i+=4){const v=(A.buf[i]-128)/128;s+=v*v}return Math.sqrt(s/(A.buf.length/4))}
+// Relay (TURN) servers let phones on mobile data or strict wifi connect. Paste your own credentials here, e.g.
+// {urls:'turn:global.relay.metered.ca:443?transport=tcp',username:'...',credential:'...'}
+const VC_TURN=[];
+let vcLocked=false;
+function unlockVoiceAudio(){vcLocked=false;try{if(VC.ctx)VC.ctx.resume()}catch(e){}for(const C of VC.pcs.values())if(C.el)C.el.play().catch(()=>{vcLocked=true})}
+addEventListener('pointerdown',()=>{if(vcLocked)unlockVoiceAudio()},true);
 function makePC(key){
-  const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun.cloudflare.com:3478']}]});
-  const C={pc,el:null,A:null,key};VC.pcs.set(key,C);
+  const pc=new RTCPeerConnection({iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun.cloudflare.com:3478']},...VC_TURN]});
+  const C={pc,el:null,A:null,key,born:Date.now()};VC.pcs.set(key,C);
   if(VC.stream)VC.stream.getAudioTracks().forEach(t=>pc.addTrack(t,VC.stream));else pc.addTransceiver('audio',{direction:'recvonly'});
   pc.ontrack=e=>{const st=e.streams[0]||new MediaStream([e.track]);if(!C.el){C.el=new Audio();C.el.autoplay=true;C.el.playsInline=true;C.el.setAttribute('playsinline','');document.body.appendChild(C.el)}
-    C.el.srcObject=st;C.el.play().catch(()=>{});C.A=analyser(st)};
-  pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState))dropPC(key)};
+    C.el.srcObject=st;C.el.play().catch(()=>{vcLocked=true;toast('화면을 한 번 눌러 주면 목소리가 들려요')});C.A=analyser(st)};
+  pc.onconnectionstatechange=()=>{if(pc.connectionState==='failed')VC.fails=(VC.fails||0)+1;if(pc.connectionState==='connected'){VC.fails=0;if(C.el)C.el.play().catch(()=>{vcLocked=true})}if(['failed','closed'].includes(pc.connectionState))dropPC(key)};
   return C}
 function dropPC(key){const C=VC.pcs.get(key);if(!C)return;VC.pcs.delete(key);try{C.pc.close()}catch(e){}if(C.el){C.el.srcObject=null;C.el.remove()}}
-async function callPeer(key){const C=makePC(key);try{window.__st='offer';const off=await C.pc.createOffer();window.__st='setlocal';await C.pc.setLocalDescription(off);window.__st='ice';await waitIce(C.pc);window.__st='done';if(VC.pcs.get(key)!==C)return;window.__sent=(window.__sent||0)+1;room.signal(key,{sdp:C.pc.localDescription.toJSON()})}catch(e){window.__err=String(e);dropPC(key)}}
+async function callPeer(key){const C=makePC(key);C.cid=Math.random().toString(36).slice(2,9);try{window.__st='offer';const off=await C.pc.createOffer();window.__st='setlocal';await C.pc.setLocalDescription(off);window.__st='ice';await waitIce(C.pc);window.__st='done';if(VC.pcs.get(key)!==C)return;window.__sent=(window.__sent||0)+1;room.signal(key,{sdp:C.pc.localDescription.toJSON(),cid:C.cid})}catch(e){window.__err=String(e);dropPC(key)}}
 async function onSignal(from,d){window.__sig=(window.__sig||0)+1;
-  if(!VC.on||!d||!d.sdp)return;
+  if(!VC.on||!d)return;
+  // the other side is ready and waiting for us to dial: call now (or re-dial a call that stalled)
+  if(d.ring){if(myPeer<from&&voiceTargets().has(from)){const C=VC.pcs.get(from);if(!C||(C.pc.connectionState==='new'&&Date.now()-C.born>15000)){if(C)dropPC(from);callPeer(from)}}return}
+  if(!d.sdp)return;
   try{if(d.sdp.type==='offer'){if(!voiceTargets().has(from))return;if(VC.pcs.has(from))dropPC(from);const C=makePC(from);await C.pc.setRemoteDescription(d.sdp);
-      await C.pc.setLocalDescription(await C.pc.createAnswer());await waitIce(C.pc);room.signal(from,{sdp:C.pc.localDescription.toJSON()})}
-    else if(d.sdp.type==='answer'){const C=VC.pcs.get(from);if(C&&C.pc.signalingState==='have-local-offer')await C.pc.setRemoteDescription(d.sdp)}}catch(e){dropPC(from)}}
+      await C.pc.setLocalDescription(await C.pc.createAnswer());await waitIce(C.pc);if(VC.pcs.get(from)===C)room.signal(from,{sdp:C.pc.localDescription.toJSON(),cid:d.cid})}
+    else if(d.sdp.type==='answer'){const C=VC.pcs.get(from);if(C&&C.cid===d.cid&&C.pc.signalingState==='have-local-offer')await C.pc.setRemoteDescription(d.sdp)}}catch(e){dropPC(from)}}
 function manageVoice(){
   if(!VC.on)return;const want=voiceTargets();
   for(const key of [...VC.pcs.keys()])if(!want.has(key))dropPC(key);
   for(const key of want)if(!VC.pcs.has(key)&&myPeer<key)callPeer(key);
+  // the higher id can't dial, so it rings the lower id until a call arrives
+  for(const key of want){const C=VC.pcs.get(key);if(myPeer>key&&(!C||C.pc.connectionState!=='connected')){VC.rang=VC.rang||{};if(Date.now()-(VC.rang[key]||0)>3500){VC.rang[key]=Date.now();room.signal(key,{ring:1})}}}
   // re-dial a pair that never connected
-  for(const [key,C] of VC.pcs){if(myPeer<key&&C.pc.connectionState==='new'&&C.pc.signalingState==='have-local-offer'&&!C.t0)C.t0=Date.now();if(C.t0&&Date.now()-C.t0>12000&&C.pc.connectionState!=='connected'){dropPC(key)}}
+  // give a call time to gather and check candidates before trying again; never cut one that is mid-connect too early
+  for(const [key,C] of VC.pcs){if(myPeer>key)continue;const st=C.pc.connectionState,age=Date.now()-C.born;
+    if((st==='new'&&age>15000)||(st==='connecting'&&age>30000)||(st==='disconnected'&&age>20000)){VC.fails=(VC.fails||0)+1;dropPC(key)}}
 }
 let talkTex=null;function talkSprite(){if(!talkTex)talkTex=canvasTex(64,64,(x,w,h)=>{x.fillStyle='rgba(60,170,110,.95)';x.beginPath();x.arc(32,32,22,0,7);x.fill();x.fillStyle='#fff';x.fillRect(27,16,10,20);x.beginPath();x.arc(32,36,5,0,Math.PI);x.fill();
     x.strokeStyle='#fff';x.lineWidth=3;x.beginPath();x.arc(32,32,11,0.15*Math.PI,0.85*Math.PI);x.stroke();x.fillRect(30.5,43,3,6)});
@@ -2766,11 +2788,19 @@ function updateVoice(){
   for(const [key,C] of VC.pcs){const o=others.get(key);if(!o||!C.el)continue;const d=Math.hypot(o.tx-pos.x,o.tz-pos.z);C.el.volume=Math.max(0.05,Math.min(1,1-(d-6)/34));setTalking(o.av,level(C.A)>0.04)}
   for(const [k,o] of others)if(!VC.pcs.has(k)&&o.av.userData.talk)o.av.userData.talk.visible=false;
   if(me)setTalking(me,VC.mic&&!VC.muted&&level(VC.myAn)>0.04);
+  // status line: who is reachable, connecting, connected, or blocked
+  const now=performance.now();if(now-(VC.lastWhy||0)>700){VC.lastWhy=now;const want=voiceTargets().size,on=[...others.values()].filter(o=>o.vc).length;let ok=0,ing=0;
+    for(const C of VC.pcs.values()){const st=C.pc.connectionState;if(st==='connected')ok++;else ing++}VC.fails=VC.fails||0;
+    let msg=!VC.mic?'🎧 듣기만 하는 중 (마이크 꺼짐)':VC.muted?'🔇 마이크 꺼짐':'🎙 마이크 켜짐';
+    msg+=on===0?' · 음성 켠 사람이 아직 없어요':want===0?' · 같은 공간에 음성 켠 사람이 없어요':` · 연결 ${ok}/${want}`+(ing?' (연결 중…)':'');
+    if(VC.fails>=3&&ok===0&&want>0)msg+=' · 네트워크가 막혀 연결이 안 돼요(중계 서버 필요)';if(vcLocked)msg+=' · 화면을 눌러 소리 켜기';
+    vcWhy.textContent=msg;vcWhy.hidden=false}
 }
+const vcWhy=document.getElementById('vcWhy');
 function renderVoiceBtns(){voiceBtn.textContent=VC.on?'음성 나가기':'음성 대화';voiceBtn.setAttribute('aria-pressed',VC.on);muteBtn.hidden=!(VC.on&&VC.mic);muteBtn.textContent=VC.muted?'마이크 켜기':'마이크 끄기';muteBtn.setAttribute('aria-pressed',VC.muted)}
 voiceBtn.onclick=async()=>{
   if(!room||!room.signal){toast('음성 대화는 깃허브 주소에서 쓸 수 있어요');return}
-  if(VC.on){VC.on=false;for(const k of [...VC.pcs.keys()])dropPC(k);if(VC.stream)VC.stream.getTracks().forEach(t=>t.stop());VC.stream=null;VC.mic=false;VC.myAn=null;if(me)setTalking(me,false);
+  if(VC.on){VC.on=false;vcWhy.hidden=true;for(const k of [...VC.pcs.keys()])dropPC(k);if(VC.stream)VC.stream.getTracks().forEach(t=>t.stop());VC.stream=null;VC.mic=false;VC.myAn=null;if(me)setTalking(me,false);
     for(const o of others.values())if(o.av.userData.talk)o.av.userData.talk.visible=false;sendPresence(true);renderVoiceBtns();toast('음성 대화에서 나왔어요');return}
   try{if(!VC.ctx)VC.ctx=new (window.AudioContext||window.webkitAudioContext)();VC.ctx.resume()}catch(e){}
   try{VC.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});VC.mic=true;VC.myAn=analyser(VC.stream);toast('음성 대화에 들어왔어요. 가까이 있는 사람 목소리가 더 크게 들려요')}
