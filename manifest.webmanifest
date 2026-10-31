@@ -1,0 +1,20 @@
+{
+  "name": "숨의 여행 · Journey of Breath",
+  "short_name": "숨의 여행",
+  "description": "세계 곳곳을 여행하며 함께 숨 쉬는 3D 요가 공간",
+  "id": "./",
+  "start_url": "./?source=app",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#2a1810",
+  "theme_color": "#2a1810",
+  "lang": "ko",
+  "categories": ["health", "lifestyle", "games"],
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
